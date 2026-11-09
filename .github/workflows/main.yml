@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         os:
           - ubuntu-latest
@@ -30,25 +30,38 @@ jobs:
           ctest --version
 
       - name: cache dependency sources
+        id: dependency-cache
         uses: actions/cache@v4
         with:
           path: |
-            build/_deps/yaml-cpp-src
-            build/_deps/googletest-src
-          key: deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
+            ${{ github.workspace }}/dependencies/yaml-cpp-src
+            ${{ github.workspace }}/dependencies/googletest-src
+          key: dependencies-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('CMakeLists.txt') }}
 
-      - name: configure project
+      - name: configure project without cache
+        if: steps.dependency-cache.outputs.cache-hit != 'true'
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_CXX_STANDARD=17
           -DDATACONV_BUILD_TESTS=ON
-          -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
+          -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/dependencies"
+
+      - name: configure project with cache
+        if: steps.dependency-cache.outputs.cache-hit == 'true'
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_STANDARD=17
+          -DDATACONV_BUILD_TESTS=ON
+          -DFETCHCONTENT_BASE_DIR="${{ github.workspace }}/dependencies"
+          -DFETCHCONTENT_SOURCE_DIR_YAML-CPP="${{ github.workspace }}/dependencies/yaml-cpp-src"
+          -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${{ github.workspace }}/dependencies/googletest-src"
 
       - name: build project
         run: cmake --build build --config Release --parallel 2
 
-      - name: Run tests
+      - name: run tests
         working-directory: build
         run: >
           ctest -C Release
